@@ -44,16 +44,20 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 router.get('/conversations', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const result = await pool.query(
-      `SELECT DISTINCT ON (CASE WHEN m.sender_id = $1 THEN m.receiver_id ELSE m.sender_id END)
-              m.*,
-              CASE WHEN m.sender_id = $1 THEN m.receiver_id ELSE m.sender_id END as other_user_id,
+      `SELECT DISTINCT ON (conversation.other_user_id)
+              conversation.*,
               other.real_name as other_user_name,
               other.avatar as other_user_avatar,
-              (SELECT COUNT(*) FROM messages WHERE receiver_id = $1 AND sender_id = other_user_id AND is_read = false) as unread_count
-       FROM messages m
-       JOIN users other ON other.id = CASE WHEN m.sender_id = $1 THEN m.receiver_id ELSE m.sender_id END
-       WHERE m.sender_id = $1 OR m.receiver_id = $1
-       ORDER BY other_user_id, m.created_at DESC`,
+              (SELECT COUNT(*) FROM messages
+               WHERE receiver_id = $1 AND sender_id = conversation.other_user_id AND is_read = false) as unread_count
+       FROM (
+         SELECT m.*,
+                CASE WHEN m.sender_id = $1 THEN m.receiver_id ELSE m.sender_id END as other_user_id
+         FROM messages m
+         WHERE m.sender_id = $1 OR m.receiver_id = $1
+       ) conversation
+       JOIN users other ON other.id = conversation.other_user_id
+       ORDER BY conversation.other_user_id, conversation.created_at DESC`,
       [req.user?.id]
     );
 
